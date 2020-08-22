@@ -1,0 +1,2 @@
+from djangoadmin.rest_api.viewsets.UserRegistrationViewSet import UserRegistrationViewSet
+from djangoadmin.rest_api.viewsets.UserProfileViewSet import UserProfileViewSet
