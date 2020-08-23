@@ -1,0 +1,9 @@
+from setuptools import setup
+
+setup(name='ds_distributions',
+      version='0.1',
+      description='Gaussian and Binomial distributions',
+      packages=['ds_distributions'],
+      author = 'Dewen Yushu',
+      author_email = 'dewenyushu@gmail.com',
+      zip_safe=False)
