@@ -1,0 +1,1 @@
+from thymesis.thymesis import __version__
