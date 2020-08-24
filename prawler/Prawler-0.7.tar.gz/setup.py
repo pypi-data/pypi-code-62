@@ -1,0 +1,28 @@
+from distutils.core import setup
+setup(
+	name = 'Prawler',
+	packages = ['Prawler'],
+	version = '0.7',
+	description = 'Scrap Proxies from Internet in seconds',
+	author = 'Priyam Harsh',
+	author_email = 'priyamharsh14@gmail.com',
+	url = 'https://github.com/priyamharsh14/Prawler',
+	download_url = 'https://github.com/priyamharsh14/Prawler/tarball/master',
+	keywords = ['proxy', 'scraper', 'crawler', 'proxycrawler'],
+	data_files=[('', ['LICENSE'])],
+	include_package_data=True,
+	classifiers=[
+	'Development Status :: 5 - Production/Stable',
+	'Intended Audience :: Developers',
+	'Topic :: Software Development :: Libraries :: Python Modules',
+	'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
+	'Programming Language :: Python :: 3',
+	'Programming Language :: Python :: 3.4',
+	'Programming Language :: Python :: 3.5',
+	'Programming Language :: Python :: 3.6',
+	'Programming Language :: Python :: 3.7',
+	'Programming Language :: Python :: 3.8',
+	'Operating System :: OS Independent',
+	'Environment :: Console',
+	],
+)
