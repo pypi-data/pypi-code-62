@@ -1,0 +1,139 @@
+import logging
+import string
+import re
+
+logger = logging.getLogger(__name__)
+
+
+class Key(str):
+    """ Defines key string with limitations
+
+    - Minimum length is 3
+    - Allowed characters are
+        - Lower case ascii (a-z)
+        - Digits (0-9)
+        - Underscore (_)
+        - Double underscore (__)
+    - Underscore and digits can not be the first character
+    - Underscore can not be the last character
+    - The double underscore act as separator for groups in the key
+    - Triple underscore is reserved for separating keys from other keys or
+      strings, such as in class :class:`.Atom`
+
+    Sample keys::
+
+        'simple'
+        'with_longer_name'
+        'group_one__group_two__group_three'
+        'digit1'
+        'longer_digit2'
+        'group1__group2__group3'
+        'group_1__group_2__group_3'
+
+    """
+
+    ALLOWED_CHARACTERS = string.ascii_lowercase + string.digits + '_'
+    ALLOWED_STARTSWITH = string.ascii_lowercase
+    ALLOWED_ENDSWITH = string.ascii_lowercase + string.digits
+    MINIMUM_ALLOWED_LENGTH = 3
+
+    REGEX_STRING = r'[a-z][a-z_]*[a-z]'
+    RE = re.compile(REGEX_STRING)
+
+    #: Separates key from other keys or elements, such as identity and zulu
+    #: in Atom
+    OUTER_SEPARATOR = '___'
+
+    #: Separates groups in key
+    SEPARATOR = '__'
+
+    def __new__(cls, key: str):
+        # TODO: Add list as input, creating key with separator
+        # if isinstance(key, Key):
+        #     raise KeyFormatError(f'Input must be string, not Key. Use'
+        #                          f'Key.elf() to allow this.')
+        cls._verify_key(key)
+        instance = super(Key, cls).__new__(cls, key)
+        return instance
+
+    @classmethod
+    def _verify_key(cls, key: str):
+        if not len(key) >= cls.MINIMUM_ALLOWED_LENGTH:
+            raise InvalidKey(f'Key too short. Key \'{key}\' has length '
+                                 f'{len(key)}, while minimum length is '
+                                 f'{cls.MINIMUM_ALLOWED_LENGTH}')
+        if not key[0] in cls.ALLOWED_STARTSWITH:
+            raise InvalidKey(f'Invalid startswith. Key \'{key}\' cannot '
+                                 f'start with \'{key[0]}\'. Allowed startswith '
+                                 f'characters are: '
+                                 f'{cls.ALLOWED_STARTSWITH}')
+        if not key[-1] in cls.ALLOWED_ENDSWITH:
+            raise InvalidKey(f'Invalid endswith. Key \'{key}\' cannot '
+                                 f'end with \'{key[-1]}\'. Allowed endswith '
+                                 f'characters are: '
+                                 f'{cls.ALLOWED_ENDSWITH}')
+        invalid_characters = [x for x in key if x not in
+                              cls.ALLOWED_CHARACTERS]
+        if len(invalid_characters) > 0:
+            raise InvalidKey(f'Invalid character(s). Key \'{key}\' cannot '
+                                 f'contain any of {invalid_characters}. '
+                                 f'Allowed characters are: '
+                                 f'{cls.ALLOWED_CHARACTERS}')
+        if cls.OUTER_SEPARATOR in key:
+            raise InvalidKey(f'Key contains element reserved as outer '
+                                 f'separator. '
+                                 f'Key \'{key}\' cannot contain '
+                                 f'\'{cls.OUTER_SEPARATOR}\'')
+
+    @classmethod
+    def is_key(cls, key: str):
+        try:
+            cls._verify_key(key)
+            return True
+        except InvalidKey:
+            return False
+
+    def parts(self):
+        """ Returns key parts as defined by separator (double underscore)
+
+        Example::
+
+            key = Key('some_key__with_two__three_parts')
+            key.parts()
+                ['some_key', 'with_two', 'three_parts']
+
+        :returns: [str]
+        """
+        return self.split(self.SEPARATOR)
+
+    def with_separator(self, separator):
+        """ Replace separator
+
+        Example::
+
+            key = Key('some__key_that_could_be__path')
+            key.with_separator('/')
+                'some/key_that_could_be/path'
+
+        :param separator: Separator of choice
+        :type separator: str
+        :return: str
+        """
+        return separator.join(self.parts())
+
+    @classmethod
+    def elf(cls, key):
+        """ Allows key class to pass through instead of throwing exception
+
+        :param key: Input key string or key class
+        :type key: str or Key
+        :return: Key
+        """
+        if isinstance(key, Key):
+            return key
+        else:
+            return cls(key)
+
+
+class InvalidKey(Exception):
+    pass
