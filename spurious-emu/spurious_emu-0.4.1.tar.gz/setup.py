@@ -1,0 +1,37 @@
+# -*- coding: utf-8 -*-
+from setuptools import setup
+
+packages = \
+['emu', 'emu.lib', 'emu.lib.VBA', 'emu.lib.WSH', 'emu.resources']
+
+package_data = \
+{'': ['*']}
+
+install_requires = \
+['oletools>=0.55.1,<0.56.0',
+ 'prettytable>=0.7.2,<0.8.0',
+ 'pyparsing>=2.4.7,<3.0.0',
+ 'python-magic>=0.4.18,<0.5.0']
+
+entry_points = \
+{'console_scripts': ['emu = emu.__main__:main']}
+
+setup_kwargs = {
+    'name': 'spurious-emu',
+    'version': '0.4.1',
+    'description': 'VBA static and dynamic analysis tool for malware analysts',
+    'long_description': '# SpuriousEmu\n\n![Travis (.com)](https://img.shields.io/travis/com/ldbo/SpuriousEmu)\n![GitHub tag (latest SemVer)](https://img.shields.io/github/v/tag/ldbo/SpuriousEmu)\n![PyPI - Downloads](https://img.shields.io/pypi/v/spurious-emu)\n![Coveralls github](https://img.shields.io/coveralls/github/ldbo/SpuriousEmu)\n![PyPI - Python Version](https://img.shields.io/pypi/pyversions/spurious-emu)\n![Github - License](https://img.shields.io/github/license/ldbo/SpuriousEmu)\n[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)\n\nVisual Basic for Applications tools allowing to parse VBA files, interpret them and extract behaviour information for malware analysis purpose.\n\n## Installation\n\nSpuriousEmu is available on PyPI, so you can install it using\n\n```bash\npip install spurious-emu\n```\n\n## Usage\n\nSpuriousEmu can work with VBA source files, or directly with Office documents. For the later case, it relies on olevba to extract macros from the files. All of the command use a final positional argument to specify the input file to work with.\n\nIf you work with VBA source files, the following convention is used:\n - procedural modules have `.bas` extension\n - class modules have `.cls` extension\n - standalone script files have `.vbs` extension\n\nSpuriousEmu uses different subcommands for its different operating modes.\n\n### Static analysis\n\nStatic analysis is performed using the `static` subcommand.\n\nUsually, the first step is to determine the different functions and classes defined, in order to understand the structure of the program. You can for example use it to determine the entry point prior to dynamic analysis. It is the default behaviour when using no flag:\n\n```bash\nemu static document.xlsm\n```\n\nAdditionally, for large files, you can use the `-o` flag to serialize the information compiled during static analysis into a binary file that you will be able to use later with the `report` command for example:\n\n```bash\nemu static -o document.spurious-com document.xlsm\n```\n\n### Dynamic analysis\n\nYou can trigger dynamic analysis with the `dynamic` subcommand.\n\nOnce you have found the entry-point you want to use with the `static` subcommand, you can execute a file by specifying it with the `-e` flag. For example, to launch the `Main` function found in `doc.xlsm`, use\n\n```bash\nemu dynamic -e Main doc.xlsm\n```\n\nThis will display a report of the execution of the program. Additionally, if you want to save the files created during execution, you can use the `-o` flag: it specifies a directory to save files to. Each created file is then stored in a file with its md5 sum as file name, and a `{hash}.filename.txt` file contains its original name. You can also save a report of the dynamic analysis using the `-r` flag. For example:\n\n```bash\nemu dynamic -o extract_files -r report.spemu-out doc.xlsm\n```\n\n### De-obfuscation\n\nSpuriousEmu ~will often~ can fail to interpret VBA program, however it should still be able to help you de-obfuscate macros : that is what the `deobfuscate` command is for.\n\nIt works with a document, source file or compiled file and writes to the standard output a de-obfuscated version of macros that have been found. The most basic invocation is\n\n```bash\nemu deobfuscate document.docm\n```\n\nYou can customize de-obfuscation with two options:\n - Flag `-p` allows you to evaluate expressions without side effects. Use `-p 0` to disable it, `-p 1` to only handle literal expressions (e.g. replace `"W" + "Scr" & "ip"` with `"WScript"`) and `-p 2` to also handle pure functions (e.g. replace `Chr(37)` with `"%"`)\n - Flag `-s` renames symbols that seem to be obfuscated with legible names (e.g. `1l11l1l` to `var_1`). If it is not specified, all the modules will be de-obfuscated.\n\nAdditionally, you can choose to only output a given symbol with the `-e` flag.\n\nThus, to de-obfuscate `Document_Open`, using clear variable names and decrypting XOR-encrypted static strings, use\n\n```bash\nemu deobfuscate -e Document_Open -p 2 -s document.spemu-com\n```\n\nFinally, you can use the *experimental* Markov classifier feature : variable names to be demangled are determined by a classifier which tries to compute how English a word appears. It is enabled by the `-m` flag.\n\n### Report production\n\nYou can work with `.spemu-out` and `.spemu-com` file with the `report` command.\n\nThe `report` commands can have three mutually exclusive flags: `--json`, `--csv` and `--table`, which change the way reports are displayed.\n\nSimilarly to the default `static` output, you can use the `--symbols` flag with a `.spemu-com` file to get the list of functions and classes. For example, to have them in a JSON dump, you can use\n\n```bash\nemu report --symbols --json program.spemu-com\n```\n\nYou can extract the files generated by the execution of a program using the `--extract-files` flag, which behaves like the `-o` flag with the `dynamic` command:\n\n```bash\nemu report --extract-files files program.spemu-out\n```\n\nA timeline of the events can be produced with the `--timeline` flag. It can be made easier to read with the `--shorten` and `--skip-streaks` commands, as in\n\n```bash\nemu report --timeline --table --shorten --skip-streaks 10 program.spemu-out\n```\n\n## Dependencies\n\nPython 3.8 is used, and SpuriousEmu mainly relies on [PyParsing](https://github.com/pyparsing/pyparsing) for VBA grammar parsing, and [oletools](http://www.decalage.info/python/oletools) to extract VBA macros from Office documents. Report tables are generated using [PrettyTable](https://github.com/jazzband/prettytable).\n\n[nose](https://nose.readthedocs.io/en/latest/man.html) is used as testing framework, and [mypy](http://mypy-lang.org/) to perform static code analysis. `lxml` and `coverage` are used to produce test reports.\n\n## Tests\n\nTo set a development environment up, use `poetry`:\n\n```bash\npoetry install\n```\n\nThen, use nose to run the test suite:\n\n```bash\npoetry run nosetests\n```\n\nAll test files are in `tests`, including:\n    - Python test scripts, starting with `test_`\n    - VBA scripts used to test the different stages of the tools, with `vbs` extensions, stored in `source`\n    - expected test results, stored as JSON dumps in `result`\n\n\nYou can use mypy to perform code static analysis:\n\n```bash\npoetry run mypy emu/*.py\n```\n\nBoth commands produce HTML reports stored in `tests/report`.\n',
+    'author': 'Louis Dubois',
+    'author_email': 'ldbo@protonmail.com',
+    'maintainer': None,
+    'maintainer_email': None,
+    'url': 'https://github.com/ldbo/SpuriousEmu',
+    'packages': packages,
+    'package_data': package_data,
+    'install_requires': install_requires,
+    'entry_points': entry_points,
+    'python_requires': '>=3.8,<4.0',
+}
+
+
+setup(**setup_kwargs)
