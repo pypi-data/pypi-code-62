@@ -1,0 +1,2 @@
+class BricConsts:
+    empty = None
