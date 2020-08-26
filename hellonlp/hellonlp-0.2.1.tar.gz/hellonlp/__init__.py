@@ -1,0 +1,2 @@
+from hellonlp.ChineseWordSegmentation import word_segmentation
+from hellonlp.ChineseWordSegmentation import discovery_word
