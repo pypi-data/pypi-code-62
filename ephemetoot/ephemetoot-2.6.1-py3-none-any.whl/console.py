@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+
+#  #####################################################################
+#     Ephemetoot - A command line tool to delete your old toots
+#     Copyright (C) 2018 Hugh Rundle, 2019-2020 Hugh Rundle & others
+#     Initial work based on tweet-deleting script by @flesueur
+#     (https://gist.github.com/flesueur/bcb2d9185b64c5191915d860ad19f23f)
+#
+#     This program is free software: you can redistribute it and/or modify
+#     it under the terms of the GNU General Public License as published by
+#     the Free Software Foundation, either version 3 of the License, or
+#     (at your option) any later version.
+
+#     This program is distributed in the hope that it will be useful,
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#     GNU General Public License for more details.
+
+#     You should have received a copy of the GNU General Public License
+#     along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#     You can contact Hugh on Mastodon: @hugh@ausglam.space
+#     or email: ephemetoot@hugh.run
+#  #####################################################################
+
+# import
+import yaml
+
+# from standard library
+from argparse import ArgumentParser
+from datetime import datetime, timezone
+import os
+import pkg_resources 
+
+# local files
+from lib import ephemetoot
+
+# version number from package info
+vnum = pkg_resources.require("ephemetoot")[0].version
+
+parser = ArgumentParser()
+parser.add_argument(
+    "--archive-deleted", action="store_true", help="Only archive toots that are being deleted"
+)
+parser.add_argument(
+    "--config", action="store", metavar="filepath", default="config.yaml", help="Filepath of your config file, absolute or relative to the current directory. If no --config path is provided, ephemetoot will use 'config.yaml'."
+)
+parser.add_argument(
+    "--datestamp", action="store_true", help="Include a datetime stamp for every action (e.g. deleting a toot)"
+)
+parser.add_argument(
+    "--hide-skipped", "--hide_skipped", action="store_true", help="Do not write to log when skipping saved toots"
+)
+parser.add_argument(
+    "--pace", action="store_true", help="Slow deletion actions to match API rate limit to avoid pausing"
+)
+parser.add_argument(
+    "--quiet", action="store_true", help="Suppress most logging"
+)
+parser.add_argument(
+    "--retry-mins", action="store", metavar="minutes", nargs="?", const="1", default="1", type=int, help="Number of minutes to wait between retries, when an error is thrown"
+)
+parser.add_argument(
+    "--schedule", action="store", metavar="filepath", nargs="?", const=".", help="Save and load plist file on MacOS"
+)
+parser.add_argument(
+    "--test", action="store_true", help="Do a test run without deleting any toots"
+)
+parser.add_argument(
+    "--time", action="store", metavar=('hour', 'minute'), nargs="*", help="Hour and minute to schedule: e.g. 9 30 for 9.30am"
+)
+parser.add_argument(
+    "--version", action="store_true", help="Display the version number"
+)
+
+options = parser.parse_args()
+if options.config[0] == '~':
+    config_file = os.path.expanduser(options.config)
+elif options.config[0] == '/':
+    config_file = options.config
+else: 
+    config_file = os.path.join( os.getcwd(), options.config )
+
+def main():
+    if options.version:
+        ephemetoot.version(vnum)
+    elif options.schedule:
+        ephemetoot.schedule(options)
+    else:
+        if not options.quiet:
+            print('')
+            print('============= EPHEMETOOT v' + vnum + ' ================')
+            print('Running at ' + str( datetime.now(timezone.utc).strftime('%a %d %b %Y %H:%M:%S %z') ))
+            print('================================================')
+            print('')
+        if options.test:
+            print("This is a test run...\n")
+        with open(config_file) as config:
+            for accounts in yaml.safe_load_all(config):
+                for user in accounts:
+                    ephemetoot.checkToots(user, options)
