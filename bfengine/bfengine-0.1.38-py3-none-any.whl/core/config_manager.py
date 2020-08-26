@@ -1,0 +1,20 @@
+from .module import Module
+from ..caller.config_manager_caller import ConfigManagerCaller
+
+
+class ConfigManager(Module):
+    def __init__(self, app_id, set):
+        super().__init__(app_id, 'config', set)
+        self.app_id = app_id
+        self.caller = ConfigManagerCaller(self.app_id)
+
+    def get_backfill_answers(self) -> list:
+        """
+        获取未知回复列表
+        :return:
+        """
+        answers = self.caller.get_backfill()
+        return [answer['content'] for answer in answers]
+
+    def set_backfill_answer(self, answers: list) -> bool:
+        return self.caller.set_backfill(answers)
