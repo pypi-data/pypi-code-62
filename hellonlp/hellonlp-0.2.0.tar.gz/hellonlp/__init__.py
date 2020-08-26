@@ -1,0 +1,1 @@
+from hellonlp.ChineseWordSegmentation import word_segmentation
