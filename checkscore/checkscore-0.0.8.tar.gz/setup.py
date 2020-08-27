@@ -1,0 +1,22 @@
+import setuptools
+
+with open("README.md", "r") as fh:
+    long_description = fh.read()
+
+setuptools.setup(
+    name="checkscore", # Replace with your own username
+    version="0.0.8",
+    author="Newton Poudel",
+    author_email="hinewton25@gmail.com",
+    description="A package to auto fill methods in jupyter notebook during SCORE interaction.",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url="https://github.com/lilixac/checkscore",
+    packages=setuptools.find_packages(),
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+    ],
+    python_requires='>=3.5',
+)
