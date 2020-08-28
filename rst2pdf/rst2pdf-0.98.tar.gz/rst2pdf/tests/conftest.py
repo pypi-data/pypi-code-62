@@ -1,0 +1,338 @@
+"""
+Copyright (c) 2020, Stephen Finucane <stephen@that.guru>
+
+Automated testing for rst2pdf.
+
+See LICENSE.txt for licensing terms
+"""
+
+import glob
+import os
+import shlex
+import shutil
+import subprocess
+import tempfile
+
+import fitz
+from packaging import version
+import pytest
+
+
+ROOT_DIR = os.path.realpath(os.path.dirname(__file__))
+INPUT_DIR = os.path.join(ROOT_DIR, 'input')
+OUTPUT_DIR = os.path.join(ROOT_DIR, 'output')
+REFERENCE_DIR = os.path.join(ROOT_DIR, 'reference')
+
+
+def _get_metadata(pdf):
+    metadata = pdf.metadata
+
+    del metadata['creationDate']
+    del metadata['modDate']
+
+    return metadata
+
+
+def _get_pages(pdf):
+    pages = []
+
+    for page in pdf.pages():
+        pages.append(page.getText('blocks'))
+
+    return pages
+
+
+def compare_pdfs(path_a, path_b):
+    try:
+        pdf_a = fitz.open(path_a)
+    except RuntimeError:
+        pytest.fail(
+            'Reference file at %r is not a valid PDF.'
+            % (os.path.relpath(path_a, ROOT_DIR),),
+            pytrace=False,
+        )
+
+    try:
+        pdf_b = fitz.open(path_b)
+    except RuntimeError:
+        pytest.fail(
+            'Output file at %r is not a valid PDF.'
+            % (os.path.relpath(path_b, ROOT_DIR),),
+            pytrace=False,
+        )
+
+    # sanity check
+
+    assert pdf_a.isPDF
+    assert pdf_b.isPDF
+
+    # compare metadata
+
+    assert _get_metadata(pdf_a) == _get_metadata(pdf_b)
+
+    # compare content
+
+    pages_a = _get_pages(pdf_a)
+    pages_b = _get_pages(pdf_b)
+
+    def fuzzy_coord_diff(coord_a, coord_b):
+        diff = abs(coord_a - coord_b)
+        assert diff / max(coord_a, coord_b) < 0.04  # allow an arbitrary diff
+
+    def fuzzy_string_diff(string_a, string_b):
+        words_a = string_a.split()
+        words_b = string_a.split()
+        assert words_a == words_b
+
+    assert len(pages_a) == len(pages_b)
+    for page_a, page_b in zip(pages_a, pages_b):
+        assert len(page_a) == len(page_b)
+        for block_a, block_b in zip(page_a, page_b):
+            # each block has the following format:
+            #
+            # (x0, y0, x1, y1, "lines in block", block_type, block_no)
+            #
+            # block_type and block_no should remain unchanged, but it's
+            # possible for the blocks to move around the document slightly and
+            # the text refold without breaking entirely
+            fuzzy_coord_diff(block_a[0], block_b[0])
+            fuzzy_coord_diff(block_a[1], block_b[1])
+            fuzzy_coord_diff(block_a[2], block_b[2])
+            fuzzy_coord_diff(block_a[3], block_b[3])
+            fuzzy_string_diff(block_a[4], block_b[4])
+            assert block_a[5] == block_b[5]
+            assert block_a[6] == block_b[6]
+
+
+class File(pytest.File):
+
+    if version.parse(pytest.__version__) < version.parse('5.4.0'):
+
+        @classmethod
+        def from_parent(cls, parent, fspath):
+            return cls(parent=parent, fspath=fspath)
+
+
+class TxtFile(File):
+    def collect(self):
+        name = os.path.splitext(self.fspath.basename)[0]
+        yield TxtItem.from_parent(parent=self, name=name)
+
+
+class SphinxFile(File):
+    def collect(self):
+        name = os.path.split(self.fspath.dirname)[-1]
+        yield SphinxItem.from_parent(parent=self, name=name)
+
+
+class Item(pytest.Item):
+
+    if version.parse(pytest.__version__) < version.parse('5.4.0'):
+
+        @classmethod
+        def from_parent(cls, parent, name):
+            return cls(parent=parent, name=name)
+
+    def _build(self):
+        raise NotImplementedError
+
+    def _fail(self, msg, output=None):
+        pytest.fail(
+            f'{msg}:\n\n{output.decode("utf-8")}' if output else msg, pytrace=False,
+        )
+
+    def runtest(self):
+        __tracebackhide__ = True
+
+        # if '.ignore' file present, skip test
+
+        ignore_file = os.path.join(INPUT_DIR, self.name + '.ignore')
+        if os.path.exists(ignore_file):
+            with open(ignore_file) as fh:
+                ignore_reason = fh.read()
+
+            pytest.skip(ignore_reason)
+
+        # run the actual test
+
+        retcode, output = self._build()
+
+        # verify results
+
+        if retcode:
+            self._fail('Call failed with %d' % retcode, output)
+
+        no_pdf = os.path.exists(os.path.join(INPUT_DIR, self.name + '.nopdf'))
+        if no_pdf:
+            return
+
+        output_file = os.path.join(OUTPUT_DIR, self.name + '.pdf')
+        reference_file = os.path.join(REFERENCE_DIR, self.name + '.pdf')
+
+        if not os.path.exists(reference_file):
+            self._fail(
+                'No reference file at %r to compare against.'
+                % (os.path.relpath(output_file, ROOT_DIR),),
+            )
+
+        if os.path.isdir(output_file):
+            if not os.path.isdir(reference_file):
+                self._fail(
+                    'Mismatch between type of output (directory) and '
+                    'reference (file)',
+                    output,
+                )
+            output_files = glob.glob(os.path.join(output_file, '*.pdf'))
+            reference_files = glob.glob(os.path.join(reference_file, '*.pdf'))
+        else:
+            if not os.path.isfile(reference_file):
+                self._fail(
+                    'Mismatch between type of output (file) and reference '
+                    '(directory)',
+                    output,
+                )
+            output_files = [output_file]
+            reference_files = [reference_file]
+
+        if len(reference_files) != len(output_files):
+            self._fail(
+                'Mismatch between number of files expected and generated', output,
+            )
+
+        reference_files.sort()
+        output_files.sort()
+
+        for ref_pdf, out_pdf in zip(reference_files, output_files):
+            try:
+                compare_pdfs(ref_pdf, out_pdf)
+            except AssertionError as exc:
+                raise CompareException(exc)
+
+    def repr_failure(self, excinfo):
+        """Called when self.runtest() raises an exception."""
+        if isinstance(excinfo.value, CompareException):
+            return excinfo.exconly()
+
+        return super(Item, self).repr_failure(excinfo)
+
+    def reportinfo(self):
+        return self.fspath, 0, self.name
+
+
+class TxtItem(Item):
+    def _build(self):
+        input_ref = self.name + '.txt'
+        output_pdf = os.path.join(OUTPUT_DIR, self.name + '.pdf')
+        output_log = os.path.join(OUTPUT_DIR, self.name + '.log')
+
+        for path in (output_log, output_pdf):
+            if os.path.exists(path):
+                if os.path.isdir(path):
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
+
+        cmd = ['rst2pdf', '--date-invariant', '-v', input_ref]
+
+        cli_file = os.path.join(INPUT_DIR, self.name + '.cli')
+        if os.path.exists(cli_file):
+            with open(cli_file) as fh:
+                cmd += shlex.split(fh.read())
+
+        style_file = os.path.join(INPUT_DIR, self.name + '.style')
+        if os.path.exists(style_file):
+            cmd += ['-s', os.path.basename(style_file)]
+
+        cmd += ['-o', output_pdf]
+
+        try:
+            output = subprocess.check_output(
+                cmd, cwd=INPUT_DIR, stderr=subprocess.STDOUT,
+            )
+            retcode = 0
+        except subprocess.CalledProcessError as exc:
+            output = exc.output
+            retcode = exc.returncode
+
+        with open(output_log, 'wb') as fh:
+            fh.write(output)
+
+        output_file = os.path.join(OUTPUT_DIR, self.name + '.pdf')
+        no_pdf = os.path.exists(os.path.join(INPUT_DIR, self.name + '.nopdf'))
+        if not os.path.exists(output_file) and not no_pdf:
+            self._fail(
+                'File %r was not generated' % (os.path.relpath(output_file, ROOT_DIR),),
+                output,
+            )
+        elif os.path.exists(output_file) and no_pdf:
+            self._fail(
+                'File %r was erroneously generated'
+                % (os.path.relpath(output_file, ROOT_DIR),),
+                output,
+            )
+
+        return retcode, output
+
+
+class SphinxItem(Item):
+    def _build(self):
+        __tracebackhide__ = True
+
+        output_pdf = os.path.join(OUTPUT_DIR, self.name + '.pdf')
+        output_log = os.path.join(OUTPUT_DIR, self.name + '.log')
+
+        for path in (output_log, output_pdf):
+            if os.path.exists(path):
+                if os.path.isdir(path):
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
+
+        input_dir = os.path.join(INPUT_DIR, self.name)
+        build_dir = tempfile.mkdtemp(prefix='rst2pdf-sphinx-')
+
+        cmd = ['sphinx-build', '-b', 'pdf', input_dir, build_dir]
+
+        try:
+            output = subprocess.check_output(
+                cmd, cwd=INPUT_DIR, stderr=subprocess.STDOUT,
+            )
+            retcode = 0
+        except subprocess.CalledProcessError as exc:
+            output = exc.output
+            retcode = exc.returncode
+
+        with open(output_log, 'wb') as fh:
+            fh.write(output)
+
+        pdf_files = glob.glob(os.path.join(build_dir, '*.pdf'))
+        if pdf_files:
+            if len(pdf_files) == 1:
+                shutil.copyfile(pdf_files[0], output_pdf)
+            else:
+                shutil.copytree(build_dir, output_pdf)
+        else:
+            self._fail('Output PDF not generated', output)
+
+        shutil.rmtree(build_dir)
+
+        return retcode, output
+
+
+class CompareException(Exception):
+    """Custom exception for error reporting."""
+
+
+def pytest_collect_file(parent, path):
+    if not (path.fnmatch('*/input') or path.fnmatch('*/input/*')):
+        return
+
+    parent_dir = os.path.split(path.dirname)[-1]
+
+    if path.ext == '.txt' and parent_dir == 'input':
+        return TxtFile.from_parent(parent=parent, fspath=path)
+    elif path.basename == 'conf.py' and parent_dir.startswith('sphinx'):
+        return SphinxFile.from_parent(parent=parent, fspath=path)
+
+
+collect_ignore = ['rst2pdf/tests/input/*.py']
